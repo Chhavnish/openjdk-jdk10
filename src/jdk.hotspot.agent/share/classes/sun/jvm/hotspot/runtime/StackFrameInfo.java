@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -19,29 +19,28 @@
  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
  * or visit www.oracle.com if you need additional information or have any
  * questions.
+ *
  */
 
-/*
- * @test TestUseAutoGCSelectPolicy
- * @key gc
- * @bug 8166461 8167494
- * @summary Test that UseAutoGCSelectPolicy and AutoGCSelectPauseMillis do print a warning message
- * @library /test/lib
- * @modules java.base/jdk.internal.misc
- *          java.management
- */
+package sun.jvm.hotspot.runtime;
 
-import jdk.test.lib.process.ProcessTools;
-import jdk.test.lib.process.OutputAnalyzer;
+import sun.jvm.hotspot.oops.*;
 
-public class TestUseAutoGCSelectPolicy {
+public class StackFrameInfo {
+    private Method      method;
+    int                 bci;
+    Oop                 classHolder;
 
-  public static void main(String args[]) throws Exception {
-    ProcessBuilder pb = ProcessTools.createJavaProcessBuilder("-XX:+UseAutoGCSelectPolicy", "-XX:AutoGCSelectPauseMillis=3000", "-version");
-    OutputAnalyzer output = new OutputAnalyzer(pb.start());
-    output.shouldContain("UseAutoGCSelectPolicy was deprecated in version 9.0");
-    output.shouldContain("AutoGCSelectPauseMillis was deprecated in version 9.0");
-    output.shouldNotContain("error");
-    output.shouldHaveExitValue(0);
-  }
+    public StackFrameInfo(JavaVFrame vf) {
+        this.method = vf.getMethod();
+        this.bci = vf.getBCI();
+    }
+
+    public Method getMethod() {
+        return method;
+    }
+
+    public int getBCI() {
+        return bci;
+    }
 }
