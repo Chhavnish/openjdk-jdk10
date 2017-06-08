@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -19,35 +19,28 @@
  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
  * or visit www.oracle.com if you need additional information or have any
  * questions.
+ *
  */
 
-package compiler.codecache.stress;
+package sun.jvm.hotspot.runtime;
 
-import jdk.test.lib.TimeLimitedRunner;
-import jdk.test.lib.Utils;
+import sun.jvm.hotspot.oops.*;
 
-public class CodeCacheStressRunner {
-    private final Runnable action;
-    public CodeCacheStressRunner(Runnable action) {
-        this.action = action;
+public class StackFrameInfo {
+    private Method      method;
+    int                 bci;
+    Oop                 classHolder;
+
+    public StackFrameInfo(JavaVFrame vf) {
+        this.method = vf.getMethod();
+        this.bci = vf.getBCI();
     }
 
-    protected final void runTest() {
-        Helper.startInfiniteLoopThread(action);
-        try {
-            // adjust timeout and substract vm init and exit time
-            long timeout = Utils.adjustTimeout(Utils.DEFAULT_TEST_TIMEOUT);
-            timeout *= 0.8;
-            new TimeLimitedRunner(timeout, 2.0d, this::test).call();
-        } catch (Exception e) {
-            throw new Error("Exception occurred during test execution", e);
-        }
+    public Method getMethod() {
+        return method;
     }
 
-    private boolean test() {
-        Helper.TestCase obj = Helper.TestCase.get();
-        Helper.callMethod(obj.getCallable(), obj.expectedValue());
-        return true;
+    public int getBCI() {
+        return bci;
     }
-
 }
