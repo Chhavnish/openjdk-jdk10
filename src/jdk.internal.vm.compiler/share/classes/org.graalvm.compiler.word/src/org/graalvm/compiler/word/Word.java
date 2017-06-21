@@ -716,7 +716,7 @@ public abstract class Word extends WordFactory implements Signed, Unsigned, Poin
     @Override
     @Operation(opcode = Opcode.READ_POINTER)
     public <T extends WordBase> T readWord(int offset, LocationIdentity locationIdentity) {
-        return readWord(signed(offset), locationIdentity);
+        return readWord((WordBase)signed(offset), locationIdentity);
     }
 
     @Override
@@ -943,7 +943,7 @@ public abstract class Word extends WordFactory implements Signed, Unsigned, Poin
     @Override
     @Operation(opcode = Opcode.READ_POINTER)
     public <T extends WordBase> T readWord(int offset) {
-        return readWord(signed(offset));
+        return readWord((WordBase)signed(offset));
     }
 
     @Override
@@ -1116,7 +1116,7 @@ public abstract class Word extends WordFactory implements Signed, Unsigned, Poin
     @Override
     @Operation(opcode = Opcode.CAS_POINTER)
     public <T extends WordBase> T compareAndSwapWord(int offset, T expectedValue, T newValue, LocationIdentity locationIdentity) {
-        return compareAndSwapWord(signed(offset), expectedValue, newValue, locationIdentity);
+        return compareAndSwapWord((WordBase)signed(offset), expectedValue, newValue, locationIdentity);
     }
 
     @Override
