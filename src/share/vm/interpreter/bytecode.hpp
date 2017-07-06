@@ -28,6 +28,7 @@
 #include "interpreter/bytecodes.hpp"
 #include "memory/allocation.hpp"
 #include "oops/method.hpp"
+#include "utilities/align.hpp"
 #include "utilities/bytes.hpp"
 
 class ciBytecodeStream;
@@ -44,7 +45,7 @@ class Bytecode: public StackObj {
   // Address computation
   address addr_at            (int offset)        const     { return (address)_bcp + offset; }
   u_char byte_at(int offset) const               { return *addr_at(offset); }
-  address aligned_addr_at    (int offset)        const     { return (address)round_to((intptr_t)addr_at(offset), jintSize); }
+  address aligned_addr_at    (int offset)        const     { return align_up(addr_at(offset), jintSize); }
 
   // Word access:
   int     get_Java_u2_at     (int offset)        const     { return Bytes::get_Java_u2(addr_at(offset)); }
@@ -122,7 +123,7 @@ class Bytecode: public StackObj {
   static void assert_constant_size(int required_size, int where, Bytecodes::Code bc, bool is_wide = false) NOT_DEBUG_RETURN;
   static void assert_native_index(Bytecodes::Code bc, bool is_wide = false) NOT_DEBUG_RETURN;
   static bool can_use_native_byte_order(Bytecodes::Code bc, bool is_wide = false) {
-    return (!Bytes::is_Java_byte_ordering_different() || Bytecodes::native_byte_order(bc /*, is_wide*/));
+    return (!Endian::is_Java_byte_ordering_different() || Bytecodes::native_byte_order(bc /*, is_wide*/));
   }
 };
 

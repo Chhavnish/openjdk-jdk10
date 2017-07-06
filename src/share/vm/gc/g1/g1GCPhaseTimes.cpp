@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -78,6 +78,13 @@ G1GCPhaseTimes::G1GCPhaseTimes(uint max_gc_threads) :
   _gc_par_phases[GCWorkerEnd] = new WorkerDataArray<double>(max_gc_threads, "GC Worker End (ms):");
   _gc_par_phases[Other] = new WorkerDataArray<double>(max_gc_threads, "GC Worker Other (ms):");
 
+  _scan_rs_scanned_cards = new WorkerDataArray<size_t>(max_gc_threads, "Scanned Cards:");
+  _gc_par_phases[ScanRS]->link_thread_work_items(_scan_rs_scanned_cards, ScannedCards);
+  _scan_rs_claimed_cards = new WorkerDataArray<size_t>(max_gc_threads, "Claimed Cards:");
+  _gc_par_phases[ScanRS]->link_thread_work_items(_scan_rs_claimed_cards, ClaimedCards);
+  _scan_rs_skipped_cards = new WorkerDataArray<size_t>(max_gc_threads, "Skipped Cards:");
+  _gc_par_phases[ScanRS]->link_thread_work_items(_scan_rs_skipped_cards, SkippedCards);
+
   _update_rs_processed_buffers = new WorkerDataArray<size_t>(max_gc_threads, "Processed Buffers:");
   _gc_par_phases[UpdateRS]->link_thread_work_items(_update_rs_processed_buffers);
 
@@ -112,6 +119,9 @@ void G1GCPhaseTimes::reset() {
   _cur_evac_fail_restore_remsets = 0.0;
   _cur_evac_fail_remove_self_forwards = 0.0;
   _cur_string_dedup_fixup_time_ms = 0.0;
+  _cur_prepare_tlab_time_ms = 0.0;
+  _cur_resize_tlab_time_ms = 0.0;
+  _cur_derived_pointer_table_update_time_ms = 0.0;
   _cur_clear_ct_time_ms = 0.0;
   _cur_expand_heap_time_ms = 0.0;
   _cur_ref_proc_time_ms = 0.0;
@@ -125,6 +135,7 @@ void G1GCPhaseTimes::reset() {
   _recorded_redirty_logged_cards_time_ms = 0.0;
   _recorded_preserve_cm_referents_time_ms = 0.0;
   _recorded_merge_pss_time_ms = 0.0;
+  _recorded_start_new_cset_time_ms = 0.0;
   _recorded_total_free_cset_time_ms = 0.0;
   _recorded_serial_free_cset_time_ms = 0.0;
   _cur_fast_reclaim_humongous_time_ms = 0.0;
@@ -206,8 +217,8 @@ void G1GCPhaseTimes::add_time_secs(GCParPhases phase, uint worker_i, double secs
   _gc_par_phases[phase]->add(worker_i, secs);
 }
 
-void G1GCPhaseTimes::record_thread_work_item(GCParPhases phase, uint worker_i, size_t count) {
-  _gc_par_phases[phase]->set_thread_work_item(worker_i, count);
+void G1GCPhaseTimes::record_thread_work_item(GCParPhases phase, uint worker_i, size_t count, uint index) {
+  _gc_par_phases[phase]->set_thread_work_item(worker_i, count, index);
 }
 
 // return the average time for a phase in milliseconds
@@ -215,9 +226,9 @@ double G1GCPhaseTimes::average_time_ms(GCParPhases phase) {
   return _gc_par_phases[phase]->average() * 1000.0;
 }
 
-size_t G1GCPhaseTimes::sum_thread_work_items(GCParPhases phase) {
-  assert(_gc_par_phases[phase]->thread_work_items() != NULL, "No sub count");
-  return _gc_par_phases[phase]->thread_work_items()->sum();
+size_t G1GCPhaseTimes::sum_thread_work_items(GCParPhases phase, uint index) {
+  assert(_gc_par_phases[phase]->thread_work_items(index) != NULL, "No sub count");
+  return _gc_par_phases[phase]->thread_work_items(index)->sum();
 }
 
 template <class T>
@@ -235,11 +246,13 @@ void G1GCPhaseTimes::log_phase(WorkerDataArray<double>* phase, uint indent, outp
   phase->print_summary_on(out, print_sum);
   details(phase, Indents[indent]);
 
-  WorkerDataArray<size_t>* work_items = phase->thread_work_items();
-  if (work_items != NULL) {
-    out->print("%s", Indents[indent + 1]);
-    work_items->print_summary_on(out, true);
-    details(work_items, Indents[indent + 1]);
+  for (uint i = 0; i < phase->MaxThreadWorkItems; i++) {
+    WorkerDataArray<size_t>* work_items = phase->thread_work_items(i);
+    if (work_items != NULL) {
+      out->print("%s", Indents[indent + 1]);
+      work_items->print_summary_on(out, true);
+      details(work_items, Indents[indent + 1]);
+    }
   }
 }
 
@@ -281,13 +294,15 @@ double G1GCPhaseTimes::print_pre_evacuate_collection_set() const {
   const double sum_ms = _root_region_scan_wait_time_ms +
                         _recorded_young_cset_choice_time_ms +
                         _recorded_non_young_cset_choice_time_ms +
-                        _cur_fast_reclaim_humongous_register_time_ms;
+                        _cur_fast_reclaim_humongous_register_time_ms +
+                        _recorded_clear_claimed_marks_time_ms;
 
   info_time("Pre Evacuate Collection Set", sum_ms);
 
   if (_root_region_scan_wait_time_ms > 0.0) {
     debug_time("Root Region Scan Waiting", _root_region_scan_wait_time_ms);
   }
+  debug_time("Prepare TLABs", _cur_prepare_tlab_time_ms);
   debug_time("Choose Collection Set", (_recorded_young_cset_choice_time_ms + _recorded_non_young_cset_choice_time_ms));
   if (G1EagerReclaimHumongousObjects) {
     debug_time("Humongous Register", _cur_fast_reclaim_humongous_register_time_ms);
@@ -295,6 +310,9 @@ double G1GCPhaseTimes::print_pre_evacuate_collection_set() const {
     trace_count("Humongous Candidate", _cur_fast_reclaim_humongous_candidates);
   }
 
+  if (_recorded_clear_claimed_marks_time_ms > 0.0) {
+    debug_time("Clear Claimed Marks", _recorded_clear_claimed_marks_time_ms);
+  }
   return sum_ms;
 }
 
@@ -339,7 +357,6 @@ double G1GCPhaseTimes::print_post_evacuate_collection_set() const {
                         _recorded_merge_pss_time_ms +
                         _cur_strong_code_root_purge_time_ms +
                         _recorded_redirty_logged_cards_time_ms +
-                        _recorded_clear_claimed_marks_time_ms +
                         _recorded_total_free_cset_time_ms +
                         _cur_fast_reclaim_humongous_time_ms +
                         _cur_expand_heap_time_ms +
@@ -375,11 +392,10 @@ double G1GCPhaseTimes::print_post_evacuate_collection_set() const {
   debug_time("Code Roots Purge", _cur_strong_code_root_purge_time_ms);
 
   debug_time("Redirty Cards", _recorded_redirty_logged_cards_time_ms);
-  if (_recorded_clear_claimed_marks_time_ms > 0.0) {
-    debug_time("Clear Claimed Marks", _recorded_clear_claimed_marks_time_ms);
-  }
-
   trace_phase(_gc_par_phases[RedirtyCards]);
+#if defined(COMPILER2) || INCLUDE_JVMCI
+  debug_time("DerivedPointerTable Update", _cur_derived_pointer_table_update_time_ms);
+#endif
 
   debug_time("Free Collection Set", _recorded_total_free_cset_time_ms);
   trace_time("Free Collection Set Serial", _recorded_serial_free_cset_time_ms);
@@ -389,6 +405,10 @@ double G1GCPhaseTimes::print_post_evacuate_collection_set() const {
   if (G1EagerReclaimHumongousObjects) {
     debug_time("Humongous Reclaim", _cur_fast_reclaim_humongous_time_ms);
     trace_count("Humongous Reclaimed", _cur_fast_reclaim_humongous_reclaimed);
+  }
+  debug_time("Start New Collection Set", _recorded_start_new_cset_time_ms);
+  if (UseTLAB && ResizeTLAB) {
+    debug_time("Resize TLABs", _cur_resize_tlab_time_ms);
   }
   debug_time("Expand Heap After Collection", _cur_expand_heap_time_ms);
 

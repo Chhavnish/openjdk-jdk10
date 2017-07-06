@@ -28,6 +28,7 @@
 #include "gc/g1/g1CollectedHeap.inline.hpp"
 #include "memory/resourceArea.hpp"
 #include "runtime/orderAccess.inline.hpp"
+#include "utilities/align.hpp"
 
 G1CollectedHeap* G1AllocRegion::_g1h = NULL;
 HeapRegion* G1AllocRegion::_dummy_region = NULL;
@@ -287,7 +288,7 @@ HeapRegion* OldGCAllocRegion::release() {
     // Determine how far we are from the next card boundary. If it is smaller than
     // the minimum object size we can allocate into, expand into the next card.
     HeapWord* top = cur->top();
-    HeapWord* aligned_top = (HeapWord*)align_ptr_up(top, BOTConstants::N_bytes);
+    HeapWord* aligned_top = align_up(top, BOTConstants::N_bytes);
 
     size_t to_allocate_words = pointer_delta(aligned_top, top, HeapWordSize);
 

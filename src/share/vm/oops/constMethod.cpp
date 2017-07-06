@@ -30,6 +30,7 @@
 #include "memory/resourceArea.hpp"
 #include "oops/constMethod.hpp"
 #include "oops/method.hpp"
+#include "utilities/align.hpp"
 
 // Static initialization
 const u2 ConstMethod::MAX_IDNUM   = 0xFFFE;
@@ -128,7 +129,7 @@ int ConstMethod::size(int code_size,
   }
 
   // Align sizes up to a word.
-  extra_bytes = align_size_up(extra_bytes, BytesPerWord);
+  extra_bytes = align_up(extra_bytes, BytesPerWord);
 
   // One pointer per annotation array
   if (sizes->method_annotations_length() > 0) {
@@ -144,7 +145,7 @@ int ConstMethod::size(int code_size,
     extra_bytes += sizeof(AnnotationArray*);
   }
 
-  int extra_words = align_size_up(extra_bytes, BytesPerWord) / BytesPerWord;
+  int extra_words = align_up(extra_bytes, BytesPerWord) / BytesPerWord;
   assert(extra_words == extra_bytes/BytesPerWord, "should already be aligned");
   return align_metadata_size(header_size() + extra_words);
 }

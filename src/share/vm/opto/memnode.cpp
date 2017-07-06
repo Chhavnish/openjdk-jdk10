@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,7 +42,9 @@
 #include "opto/narrowptrnode.hpp"
 #include "opto/phaseX.hpp"
 #include "opto/regmask.hpp"
+#include "utilities/align.hpp"
 #include "utilities/copy.hpp"
+#include "utilities/vmError.hpp"
 
 // Portions of code courtesy of Clifford Click
 
@@ -713,7 +715,7 @@ const TypePtr* MemNode::calculate_adr_type(const Type* t, const TypePtr* cross_c
   #ifdef PRODUCT
   cross_check = NULL;
   #else
-  if (!VerifyAliases || is_error_reported() || Node::in_dump())  cross_check = NULL;
+  if (!VerifyAliases || VMError::is_error_reported() || Node::in_dump())  cross_check = NULL;
   #endif
   const TypePtr* tp = t->isa_ptr();
   if (tp == NULL) {
@@ -3559,7 +3561,7 @@ InitializeNode::coalesce_subword_stores(intptr_t header_size,
   intptr_t ti_limit = (TrackedInitializationLimit * HeapWordSize);
   intptr_t size_limit = phase->find_intptr_t_con(size_in_bytes, ti_limit);
   size_limit = MIN2(size_limit, ti_limit);
-  size_limit = align_size_up(size_limit, BytesPerLong);
+  size_limit = align_up(size_limit, BytesPerLong);
   int num_tiles = size_limit / BytesPerLong;
 
   // allocate space for the tile map:
@@ -3790,7 +3792,7 @@ intptr_t InitializeNode::find_next_fullword_store(uint start, PhaseGVN* phase) {
 
     // update the map:
 
-    intptr_t this_int_off = align_size_down(st_off, BytesPerInt);
+    intptr_t this_int_off = align_down(st_off, BytesPerInt);
     if (this_int_off != int_map_off) {
       // reset the map:
       int_map = 0;
@@ -3804,7 +3806,7 @@ intptr_t InitializeNode::find_next_fullword_store(uint start, PhaseGVN* phase) {
     }
 
     // Did this store hit or cross the word boundary?
-    intptr_t next_int_off = align_size_down(st_off + st_size, BytesPerInt);
+    intptr_t next_int_off = align_down(st_off + st_size, BytesPerInt);
     if (next_int_off == this_int_off + BytesPerInt) {
       // We passed the current int, without fully initializing it.
       int_map_off = next_int_off;
@@ -3894,7 +3896,7 @@ Node* InitializeNode::complete_stores(Node* rawctl, Node* rawmem, Node* rawptr,
         //   zsize          0   0   0   0     4   0     4
         if (next_full_store < 0) {
           // Conservative tack:  Zero to end of current word.
-          zeroes_needed = align_size_up(zeroes_needed, BytesPerInt);
+          zeroes_needed = align_up(zeroes_needed, BytesPerInt);
         } else {
           // Zero to beginning of next fully initialized word.
           // Or, don't zero at all, if we are already in that word.
@@ -3907,7 +3909,7 @@ Node* InitializeNode::complete_stores(Node* rawctl, Node* rawmem, Node* rawptr,
       if (zeroes_needed > zeroes_done) {
         intptr_t zsize = zeroes_needed - zeroes_done;
         // Do some incremental zeroing on rawmem, in parallel with inits.
-        zeroes_done = align_size_down(zeroes_done, BytesPerInt);
+        zeroes_done = align_down(zeroes_done, BytesPerInt);
         rawmem = ClearArrayNode::clear_memory(rawctl, rawmem, rawptr,
                                               zeroes_done, zeroes_needed,
                                               phase);
@@ -3940,7 +3942,7 @@ Node* InitializeNode::complete_stores(Node* rawctl, Node* rawmem, Node* rawptr,
       assert(st_off >= last_init_end, "tiles do not overwrite inits");
       last_tile_end = MAX2(last_tile_end, next_init_off);
     } else {
-      intptr_t st_tile_end = align_size_up(next_init_off, BytesPerLong);
+      intptr_t st_tile_end = align_up(next_init_off, BytesPerLong);
       assert(st_tile_end >= last_tile_end, "inits stay with tiles");
       assert(st_off      >= last_init_end, "inits do not overlap");
       last_init_end = next_init_off;  // it's a non-tile
@@ -3953,7 +3955,7 @@ Node* InitializeNode::complete_stores(Node* rawctl, Node* rawmem, Node* rawptr,
 
   if (!(UseTLAB && ZeroTLAB)) {
     // If anything remains to be zeroed, zero it all now.
-    zeroes_done = align_size_down(zeroes_done, BytesPerInt);
+    zeroes_done = align_down(zeroes_done, BytesPerInt);
     // if it is the last unused 4 bytes of an instance, forget about it
     intptr_t size_limit = phase->find_intptr_t_con(size_in_bytes, max_jint);
     if (zeroes_done + BytesPerLong >= size_limit) {
@@ -4385,9 +4387,9 @@ static bool might_be_same(Node* a, Node* b) {
 
 // verify a narrow slice (either incoming or outgoing)
 static void verify_memory_slice(const MergeMemNode* m, int alias_idx, Node* n) {
-  if (!VerifyAliases)       return;  // don't bother to verify unless requested
-  if (is_error_reported())  return;  // muzzle asserts when debugging an error
-  if (Node::in_dump())      return;  // muzzle asserts when printing
+  if (!VerifyAliases)                return;  // don't bother to verify unless requested
+  if (VMError::is_error_reported())  return;  // muzzle asserts when debugging an error
+  if (Node::in_dump())               return;  // muzzle asserts when printing
   assert(alias_idx >= Compile::AliasIdxRaw, "must not disturb base_memory or sentinel");
   assert(n != NULL, "");
   // Elide intervening MergeMem's
@@ -4447,7 +4449,7 @@ Node* MergeMemNode::memory_at(uint alias_idx) const {
   } else {
     // make sure the stored slice is sane
     #ifdef ASSERT
-    if (is_error_reported() || Node::in_dump()) {
+    if (VMError::is_error_reported() || Node::in_dump()) {
     } else if (might_be_same(n, base_memory())) {
       // Give it a pass:  It is a mostly harmless repetition of the base.
       // This can arise normally from node subsumption during optimization.

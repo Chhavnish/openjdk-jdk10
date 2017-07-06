@@ -43,6 +43,7 @@
 #include "runtime/java.hpp"
 #include "runtime/orderAccess.inline.hpp"
 #include "runtime/vmThread.hpp"
+#include "utilities/align.hpp"
 #include "utilities/copy.hpp"
 
 /////////////////////////////////////////////////////////////////////////
@@ -64,7 +65,7 @@ void CompactibleFreeListSpace::set_cms_values() {
 
   // MinChunkSize should be a multiple of MinObjAlignment and be large enough
   // for chunks to contain a FreeChunk.
-  size_t min_chunk_size_in_bytes = align_size_up(sizeof(FreeChunk), MinObjAlignmentInBytes);
+  size_t min_chunk_size_in_bytes = align_up(sizeof(FreeChunk), MinObjAlignmentInBytes);
   MinChunkSize = min_chunk_size_in_bytes / BytesPerWord;
 
   assert(IndexSetStart == 0 && IndexSetStride == 0, "already set");
@@ -797,7 +798,7 @@ void CompactibleFreeListSpace::object_iterate_mem(MemRegion mr,
   // because the two are not necessarily equal for some kinds of
   // spaces, in particular, certain kinds of free list spaces.
   // We could use the more complicated but more precise:
-  // MemRegion(used_region().start(), round_to(used_region().end(), CardSize))
+  // MemRegion(used_region().start(), align_up(used_region().end(), CardSize))
   // but the slight imprecision seems acceptable in the assertion check.
   assert(MemRegion(bottom(), end()).contains(mr),
          "Should be within used space");
@@ -858,7 +859,7 @@ CompactibleFreeListSpace::object_iterate_careful_m(MemRegion mr,
   assert_lock_strong(freelistLock());
   // Can't use used_region() below because it may not necessarily
   // be the same as [bottom(),end()); although we could
-  // use [used_region().start(),round_to(used_region().end(),CardSize)),
+  // use [used_region().start(),align_up(used_region().end(),CardSize)),
   // that appears too cumbersome, so we just do the simpler check
   // in the assertion below.
   assert(!mr.is_empty() && MemRegion(bottom(),end()).contains(mr),
@@ -2873,8 +2874,7 @@ initialize_sequential_subtasks_for_marking(int n_threads,
     if (span.contains(low)) {
       // Align low down to  a card boundary so that
       // we can use block_offset_careful() on span boundaries.
-      HeapWord* aligned_low = (HeapWord*)align_size_down((uintptr_t)low,
-                                 CardTableModRefBS::card_size);
+      HeapWord* aligned_low = align_down(low, CardTableModRefBS::card_size);
       // Clip span prefix at aligned_low
       span = span.intersection(MemRegion(aligned_low, span.end()));
     } else if (low > span.end()) {

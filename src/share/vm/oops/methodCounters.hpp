@@ -29,6 +29,7 @@
 #include "compiler/compilerOracle.hpp"
 #include "interpreter/invocationCounter.hpp"
 #include "runtime/arguments.hpp"
+#include "utilities/align.hpp"
 
 class MethodCounters : public Metadata {
  friend class VMStructs;
@@ -118,7 +119,7 @@ class MethodCounters : public Metadata {
   AOT_ONLY(Method* method() const { return _method; })
 
   static int size() {
-    return align_size_up(sizeof(MethodCounters), wordSize) / wordSize;
+    return align_up((int)sizeof(MethodCounters), wordSize) / wordSize;
   }
 
   void clear_counters();

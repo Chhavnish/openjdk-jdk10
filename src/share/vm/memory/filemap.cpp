@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,16 +32,20 @@
 #if INCLUDE_ALL_GCS
 #include "gc/g1/g1CollectedHeap.hpp"
 #endif
+#include "logging/log.hpp"
+#include "logging/logMessage.hpp"
 #include "memory/filemap.hpp"
 #include "memory/metadataFactory.hpp"
 #include "memory/oopFactory.hpp"
 #include "oops/objArrayOop.hpp"
+#include "prims/jvm.h"
 #include "prims/jvmtiExport.hpp"
 #include "runtime/arguments.hpp"
 #include "runtime/java.hpp"
 #include "runtime/os.hpp"
 #include "runtime/vm_version.hpp"
 #include "services/memTracker.hpp"
+#include "utilities/align.hpp"
 #include "utilities/defaultStream.hpp"
 
 # include <sys/stat.h>
@@ -98,9 +102,11 @@ void FileMapInfo::fail_continue(const char *msg, ...) {
     if (RequireSharedSpaces) {
       fail(msg, ap);
     } else {
-      if (PrintSharedSpaces) {
-        tty->print("UseSharedSpaces: ");
-        tty->vprint_cr(msg, ap);
+      if (log_is_enabled(Info, cds)) {
+        ResourceMark rm;
+        outputStream* logstream = Log(cds)::info_stream();
+        logstream->print("UseSharedSpaces: ");
+        logstream->vprint_cr(msg, ap);
       }
     }
     UseSharedSpaces = false;
@@ -418,9 +424,13 @@ bool FileMapInfo::open_for_read() {
 
 void FileMapInfo::open_for_write() {
  _full_path = Arguments::GetSharedArchivePath();
-  if (PrintSharedSpaces) {
-    tty->print_cr("Dumping shared data to file: ");
-    tty->print_cr("   %s", _full_path);
+  if (log_is_enabled(Info, cds)) {
+    ResourceMark rm;
+    LogMessage(cds) msg;
+    stringStream info_stream;
+    info_stream.print_cr("Dumping shared data to file: ");
+    info_stream.print_cr("   %s", _full_path);
+    msg.info("%s", info_stream.as_string());
   }
 
 #ifdef _WINDOWS  // On Windows, need WRITE permission to remove the file.
@@ -477,10 +487,9 @@ void FileMapInfo::write_region(int region, char* base, size_t size,
 
   if (_file_open) {
     guarantee(si->_file_offset == _file_offset, "file offset mismatch.");
-    if (PrintSharedSpaces) {
-      tty->print_cr("Shared file region %d: " SIZE_FORMAT_HEX_W(6) " bytes, addr " INTPTR_FORMAT
-                    " file offset " SIZE_FORMAT_HEX_W(6), region, size, p2i(base), _file_offset);
-    }
+    log_info(cds)("Shared file region %d: " SIZE_FORMAT_HEX_W(6)
+                  " bytes, addr " INTPTR_FORMAT " file offset " SIZE_FORMAT_HEX_W(6),
+                  region, size, p2i(base), _file_offset);
   } else {
     si->_file_offset = _file_offset;
   }
@@ -555,7 +564,7 @@ void FileMapInfo::write_bytes(const void* buffer, int nbytes) {
 // Align file position to an allocation unit boundary.
 
 void FileMapInfo::align_file_position() {
-  size_t new_file_offset = align_size_up(_file_offset,
+  size_t new_file_offset = align_up(_file_offset,
                                          os::vm_allocation_granularity());
   if (new_file_offset != _file_offset) {
     _file_offset = new_file_offset;
@@ -605,7 +614,7 @@ bool FileMapInfo::remap_shared_readonly_as_readwrite() {
     return true;
   }
   size_t used = si->_used;
-  size_t size = align_size_up(used, os::vm_allocation_granularity());
+  size_t size = align_up(used, os::vm_allocation_granularity());
   if (!open_for_read()) {
     return false;
   }
@@ -656,7 +665,7 @@ char* FileMapInfo::map_region(int i) {
   struct FileMapInfo::FileMapHeader::space_info* si = &_header->_space[i];
   size_t used = si->_used;
   size_t alignment = os::vm_allocation_granularity();
-  size_t size = align_size_up(used, alignment);
+  size_t size = align_up(used, alignment);
   char *requested_addr = _header->region_addr(i);
 
   // If a tool agent is in use (debugging enabled), we must map the address space RW
@@ -691,11 +700,11 @@ bool FileMapInfo::map_string_regions() {
         narrow_oop_shift() != Universe::narrow_oop_shift() ||
         narrow_klass_base() != Universe::narrow_klass_base() ||
         narrow_klass_shift() != Universe::narrow_klass_shift()) {
-      if (PrintSharedSpaces && _header->_space[MetaspaceShared::first_string]._used > 0) {
-        tty->print_cr("Shared string data from the CDS archive is being ignored. "
-                     "The current CompressedOops/CompressedClassPointers encoding differs from "
-                     "that archived due to heap size change. The archive was dumped using max heap "
-                     "size " UINTX_FORMAT "M.", max_heap_size()/M);
+      if (log_is_enabled(Info, cds) && _header->_space[MetaspaceShared::first_string]._used > 0) {
+        log_info(cds)("Shared string data from the CDS archive is being ignored. "
+                      "The current CompressedOops/CompressedClassPointers encoding differs from "
+                      "that archived due to heap size change. The archive was dumped using max heap "
+                      "size " UINTX_FORMAT "M.", max_heap_size()/M);
       }
     } else {
       string_ranges = new MemRegion[MetaspaceShared::max_strings];
@@ -761,8 +770,8 @@ bool FileMapInfo::map_string_regions() {
       return true;
     }
   } else {
-    if (PrintSharedSpaces && _header->_space[MetaspaceShared::first_string]._used > 0) {
-      tty->print_cr("Shared string data from the CDS archive is being ignored. UseG1GC, "
+    if (log_is_enabled(Info, cds) && _header->_space[MetaspaceShared::first_string]._used > 0) {
+      log_info(cds)("Shared string data from the CDS archive is being ignored. UseG1GC, "
                     "UseCompressedOops and UseCompressedClassPointers are required.");
     }
   }
@@ -823,7 +832,7 @@ void FileMapInfo::unmap_region(int i) {
   assert(!MetaspaceShared::is_string_region(i), "sanity");
   struct FileMapInfo::FileMapHeader::space_info* si = &_header->_space[i];
   size_t used = si->_used;
-  size_t size = align_size_up(used, os::vm_allocation_granularity());
+  size_t size = align_up(used, os::vm_allocation_granularity());
 
   if (used == 0) {
     return;

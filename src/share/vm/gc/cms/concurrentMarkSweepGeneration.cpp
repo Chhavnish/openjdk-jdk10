@@ -70,6 +70,7 @@
 #include "runtime/vmThread.hpp"
 #include "services/memoryService.hpp"
 #include "services/runtimeService.hpp"
+#include "utilities/align.hpp"
 #include "utilities/stack.inline.hpp"
 
 // statics
@@ -896,7 +897,7 @@ void CMSCollector::promoted(bool par, HeapWord* start,
         // in the heap. In the case of the MUT below, that's a
         // card size.
         MemRegion mr(start,
-                     (HeapWord*)round_to((intptr_t)(start + obj_size),
+                     align_up(start + obj_size,
                         CardTableModRefBS::card_size /* bytes */));
         if (par) {
           _modUnionTable.par_mark_range(mr);
@@ -3219,9 +3220,7 @@ void CMSConcMarkingTask::do_scan_and_mark(int i, CompactibleFreeListSpace* sp) {
   if (sp->used_region().contains(_restart_addr)) {
     // Align down to a card boundary for the start of 0th task
     // for this space.
-    aligned_start =
-      (HeapWord*)align_size_down((uintptr_t)_restart_addr,
-                                 CardTableModRefBS::card_size);
+    aligned_start = align_down(_restart_addr, CardTableModRefBS::card_size);
   }
 
   size_t chunk_size = sp->marking_task_size();
@@ -4578,13 +4577,10 @@ CMSParRemarkTask::do_dirty_card_rescan_tasks(
   const int alignment = CardTableModRefBS::card_size * BitsPerWord;
   MemRegion span = sp->used_region();
   HeapWord* start_addr = span.start();
-  HeapWord* end_addr = (HeapWord*)round_to((intptr_t)span.end(),
-                                           alignment);
+  HeapWord* end_addr = align_up(span.end(), alignment);
   const size_t chunk_size = sp->rescan_task_size(); // in HeapWord units
-  assert((HeapWord*)round_to((intptr_t)start_addr, alignment) ==
-         start_addr, "Check alignment");
-  assert((size_t)round_to((intptr_t)chunk_size, alignment) ==
-         chunk_size, "Check alignment");
+  assert(is_aligned(start_addr, alignment), "Check alignment");
+  assert(is_aligned(chunk_size, alignment), "Check alignment");
 
   while (!pst->is_task_claimed(/* reference */ nth_task)) {
     // Having claimed the nth_task, compute corresponding mem-region,
@@ -4930,7 +4926,7 @@ void CMSCollector::do_remark_non_parallel() {
       markFromDirtyCardsClosure.set_space(_cmsGen->cmsSpace());
       MemRegion ur = _cmsGen->used_region();
       HeapWord* lb = ur.start();
-      HeapWord* ub = (HeapWord*)round_to((intptr_t)ur.end(), alignment);
+      HeapWord* ub = align_up(ur.end(), alignment);
       MemRegion cms_span(lb, ub);
       _modUnionTable.dirty_range_iterate_clear(cms_span,
                                                &markFromDirtyCardsClosure);
@@ -5232,7 +5228,7 @@ void CMSCollector::refProcessingWork() {
       GCTraceTime(Debug, gc, phases) t("Class Unloading", _gc_timer_cm);
 
       // Unload classes and purge the SystemDictionary.
-      bool purged_class = SystemDictionary::do_unloading(&_is_alive_closure);
+      bool purged_class = SystemDictionary::do_unloading(&_is_alive_closure, _gc_timer_cm);
 
       // Unload nmethods.
       CodeCache::do_unloading(&_is_alive_closure, purged_class);
@@ -5253,7 +5249,6 @@ void CMSCollector::refProcessingWork() {
       StringTable::unlink(&_is_alive_closure);
     }
   }
-
 
   // Restore any preserved marks as a result of mark stack or
   // work queue overflow
@@ -5628,10 +5623,9 @@ HeapWord* CMSCollector::next_card_start_after_block(HeapWord* addr) const {
   }
   assert(sz > 0, "size must be nonzero");
   HeapWord* next_block = addr + sz;
-  HeapWord* next_card  = (HeapWord*)round_to((uintptr_t)next_block,
-                                             CardTableModRefBS::card_size);
-  assert(round_down((uintptr_t)addr,      CardTableModRefBS::card_size) <
-         round_down((uintptr_t)next_card, CardTableModRefBS::card_size),
+  HeapWord* next_card  = align_up(next_block, CardTableModRefBS::card_size);
+  assert(align_down((uintptr_t)addr,      CardTableModRefBS::card_size) <
+         align_down((uintptr_t)next_card, CardTableModRefBS::card_size),
          "must be different cards");
   return next_card;
 }
@@ -5735,8 +5729,7 @@ void CMSBitMap::region_invariant(MemRegion mr)
   // convert address range into offset range
   size_t start_ofs = heapWordToOffset(mr.start());
   // Make sure that end() is appropriately aligned
-  assert(mr.end() == (HeapWord*)round_to((intptr_t)mr.end(),
-                        (1 << (_shifter+LogHeapWordSize))),
+  assert(mr.end() == align_up(mr.end(), (1 << (_shifter+LogHeapWordSize))),
          "Misaligned mr.end()");
   size_t end_ofs   = heapWordToOffset(mr.end());
   assert(end_ofs > start_ofs, "Should mark at least one bit");
@@ -6290,8 +6283,7 @@ void MarkFromRootsClosure::reset(HeapWord* addr) {
   assert(_markStack->isEmpty(), "would cause duplicates on stack");
   assert(_span.contains(addr), "Out of bounds _finger?");
   _finger = addr;
-  _threshold = (HeapWord*)round_to(
-                 (intptr_t)_finger, CardTableModRefBS::card_size);
+  _threshold = align_up(_finger, CardTableModRefBS::card_size);
 }
 
 // Should revisit to see if this should be restructured for
@@ -6318,8 +6310,7 @@ bool MarkFromRootsClosure::do_bit(size_t offset) {
         // during the preclean or remark phase. (CMSCleanOnEnter)
         if (CMSCleanOnEnter) {
           size_t sz = _collector->block_size_using_printezis_bits(addr);
-          HeapWord* end_card_addr   = (HeapWord*)round_to(
-                                         (intptr_t)(addr+sz), CardTableModRefBS::card_size);
+          HeapWord* end_card_addr = align_up(addr + sz, CardTableModRefBS::card_size);
           MemRegion redirty_range = MemRegion(addr, end_card_addr);
           assert(!redirty_range.is_empty(), "Arithmetical tautology");
           // Bump _threshold to end_card_addr; note that
@@ -6406,11 +6397,9 @@ void MarkFromRootsClosure::scanOopsInOop(HeapWord* ptr) {
       // _threshold is always kept card-aligned but _finger isn't
       // always card-aligned.
       HeapWord* old_threshold = _threshold;
-      assert(old_threshold == (HeapWord*)round_to(
-              (intptr_t)old_threshold, CardTableModRefBS::card_size),
+      assert(is_aligned(old_threshold, CardTableModRefBS::card_size),
              "_threshold should always be card-aligned");
-      _threshold = (HeapWord*)round_to(
-                     (intptr_t)_finger, CardTableModRefBS::card_size);
+      _threshold = align_up(_finger, CardTableModRefBS::card_size);
       MemRegion mr(old_threshold, _threshold);
       assert(!mr.is_empty(), "Control point invariant");
       assert(_span.contains(mr), "Should clear within span");
@@ -6520,11 +6509,9 @@ void ParMarkFromRootsClosure::scan_oops_in_oop(HeapWord* ptr) {
     // _threshold is always kept card-aligned but _finger isn't
     // always card-aligned.
     HeapWord* old_threshold = _threshold;
-    assert(old_threshold == (HeapWord*)round_to(
-            (intptr_t)old_threshold, CardTableModRefBS::card_size),
+    assert(is_aligned(old_threshold, CardTableModRefBS::card_size),
            "_threshold should always be card-aligned");
-    _threshold = (HeapWord*)round_to(
-                   (intptr_t)_finger, CardTableModRefBS::card_size);
+    _threshold = align_up(_finger, CardTableModRefBS::card_size);
     MemRegion mr(old_threshold, _threshold);
     assert(!mr.is_empty(), "Control point invariant");
     assert(_span.contains(mr), "Should clear within span"); // _whole_span ??
@@ -6891,8 +6878,7 @@ void PushAndMarkClosure::do_oop(oop obj) {
          // are required.
          if (obj->is_objArray()) {
            size_t sz = obj->size();
-           HeapWord* end_card_addr = (HeapWord*)round_to(
-                                        (intptr_t)(addr+sz), CardTableModRefBS::card_size);
+           HeapWord* end_card_addr = align_up(addr + sz, CardTableModRefBS::card_size);
            MemRegion redirty_range = MemRegion(addr, end_card_addr);
            assert(!redirty_range.is_empty(), "Arithmetical tautology");
            _mod_union_table->mark_range(redirty_range);
@@ -7621,8 +7607,7 @@ void CMSKeepAliveClosure::do_oop(oop obj) {
         // table.
         if (obj->is_objArray()) {
           size_t sz = obj->size();
-          HeapWord* end_card_addr =
-            (HeapWord*)round_to((intptr_t)(addr+sz), CardTableModRefBS::card_size);
+          HeapWord* end_card_addr = align_up(addr + sz, CardTableModRefBS::card_size);
           MemRegion redirty_range = MemRegion(addr, end_card_addr);
           assert(!redirty_range.is_empty(), "Arithmetical tautology");
           _collector->_modUnionTable.mark_range(redirty_range);

@@ -25,6 +25,7 @@
 #ifndef SHARE_VM_UTILITIES_STACK_INLINE_HPP
 #define SHARE_VM_UTILITIES_STACK_INLINE_HPP
 
+#include "utilities/align.hpp"
 #include "utilities/stack.hpp"
 
 template <MEMFLAGS F> StackBase<F>::StackBase(size_t segment_size, size_t max_cache_size,
@@ -92,7 +93,7 @@ size_t Stack<E, F>::adjust_segment_size(size_t seg_size)
   const size_t ptr_sz = sizeof(E*);
   assert(elem_sz % ptr_sz == 0 || ptr_sz % elem_sz == 0, "bad element size");
   if (elem_sz < ptr_sz) {
-    return align_size_up(seg_size * elem_sz, ptr_sz) / elem_sz;
+    return align_up(seg_size * elem_sz, ptr_sz) / elem_sz;
   }
   return seg_size;
 }
@@ -100,7 +101,7 @@ size_t Stack<E, F>::adjust_segment_size(size_t seg_size)
 template <class E, MEMFLAGS F>
 size_t Stack<E, F>::link_offset() const
 {
-  return align_size_up(this->_seg_size * sizeof(E), sizeof(E*));
+  return align_up(this->_seg_size * sizeof(E), sizeof(E*));
 }
 
 template <class E, MEMFLAGS F>

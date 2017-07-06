@@ -26,6 +26,7 @@
 #define SHARE_VM_OOPS_CONSTMETHODOOP_HPP
 
 #include "oops/oop.hpp"
+#include "utilities/align.hpp"
 
 // An ConstMethod represents portions of a Java method which are not written to after
 // the classfile is parsed(*see below).  This part of the method can be shared across
@@ -360,7 +361,7 @@ public:
 
   // Sizing
   static int header_size() {
-    return align_size_up(sizeof(ConstMethod), wordSize) / wordSize;
+    return align_up((int)sizeof(ConstMethod), wordSize) / wordSize;
   }
 
   // Size needed

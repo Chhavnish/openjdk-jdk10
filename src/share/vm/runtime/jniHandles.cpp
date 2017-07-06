@@ -31,6 +31,7 @@
 #include "runtime/jniHandles.hpp"
 #include "runtime/mutexLocker.hpp"
 #include "runtime/thread.inline.hpp"
+#include "utilities/align.hpp"
 #if INCLUDE_ALL_GCS
 #include "gc/g1/g1SATBCardTableModRefBS.hpp"
 #endif
@@ -101,7 +102,7 @@ jobject JNIHandles::make_weak_global(Handle obj) {
       res = _weak_global_handles->allocate_handle(obj());
     }
     // Add weak tag.
-    assert(is_ptr_aligned(res, weak_tag_alignment), "invariant");
+    assert(is_aligned(res, weak_tag_alignment), "invariant");
     char* tptr = reinterpret_cast<char*>(res) + weak_tag_value;
     res = reinterpret_cast<jobject>(tptr);
   } else {

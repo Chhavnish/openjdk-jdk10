@@ -29,6 +29,7 @@
 #include "opto/graphKit.hpp"
 #include "opto/macro.hpp"
 #include "opto/runtime.hpp"
+#include "utilities/align.hpp"
 
 
 void PhaseMacroExpand::insert_mem_bar(Node** ctrl, Node** mem, int opcode, Node* precedent) {
@@ -788,7 +789,7 @@ void PhaseMacroExpand::generate_clear_array(Node* ctrl, MergeMemNode* merge_mem,
   intptr_t end_con   = _igvn.find_intptr_t_con(dest_size, -1);
   if (slice_idx_con >= 0 && slice_len_con >= 0) {
     assert(end_con < 0, "not two cons");
-    end_con = round_to(abase + ((slice_idx_con + slice_len_con) << scale),
+    end_con = align_up(abase + ((slice_idx_con + slice_len_con) << scale),
                        BytesPerLong);
   }
 

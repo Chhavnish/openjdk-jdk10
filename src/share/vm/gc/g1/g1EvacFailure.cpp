@@ -35,15 +35,16 @@
 #include "gc/g1/heapRegionRemSet.hpp"
 #include "gc/shared/preservedMarks.inline.hpp"
 
-class UpdateRSetDeferred : public OopsInHeapRegionClosure {
+class UpdateRSetDeferred : public ExtendedOopClosure {
 private:
   G1CollectedHeap* _g1;
   DirtyCardQueue *_dcq;
   G1SATBCardTableModRefBS* _ct_bs;
+  HeapRegion* _from;
 
 public:
   UpdateRSetDeferred(DirtyCardQueue* dcq) :
-    _g1(G1CollectedHeap::heap()), _ct_bs(_g1->g1_barrier_set()), _dcq(dcq) {}
+    _g1(G1CollectedHeap::heap()), _ct_bs(_g1->g1_barrier_set()), _dcq(dcq), _from(NULL) {}
 
   virtual void do_oop(narrowOop* p) { do_oop_work(p); }
   virtual void do_oop(      oop* p) { do_oop_work(p); }
@@ -58,6 +59,8 @@ public:
       }
     }
   }
+
+  void set_region(HeapRegion* from) { _from = from; }
 };
 
 class RemoveSelfForwardPtrObjClosure: public ObjectClosure {
@@ -66,14 +69,14 @@ private:
   G1ConcurrentMark* _cm;
   HeapRegion* _hr;
   size_t _marked_bytes;
-  OopsInHeapRegionClosure *_update_rset_cl;
+  UpdateRSetDeferred* _update_rset_cl;
   bool _during_initial_mark;
   uint _worker_id;
   HeapWord* _last_forwarded_object_end;
 
 public:
   RemoveSelfForwardPtrObjClosure(HeapRegion* hr,
-                                 OopsInHeapRegionClosure* update_rset_cl,
+                                 UpdateRSetDeferred* update_rset_cl,
                                  bool during_initial_mark,
                                  uint worker_id) :
     _g1(G1CollectedHeap::heap()),
@@ -216,14 +219,14 @@ public:
   }
 
   bool doHeapRegion(HeapRegion *hr) {
-    bool during_initial_mark = _g1h->collector_state()->during_initial_mark_pause();
-    bool during_conc_mark = _g1h->collector_state()->mark_in_progress();
-
     assert(!hr->is_pinned(), "Unexpected pinned region at index %u", hr->hrm_index());
     assert(hr->in_collection_set(), "bad CS");
 
     if (_hrclaimer->claim_region(hr->hrm_index())) {
       if (hr->evacuation_failed()) {
+        bool during_initial_mark = _g1h->collector_state()->during_initial_mark_pause();
+        bool during_conc_mark = _g1h->collector_state()->mark_in_progress();
+
         hr->note_self_forwarding_removal_start(during_initial_mark,
                                                during_conc_mark);
         _g1h->verifier()->check_bitmaps("Self-Forwarding Ptr Removal", hr);
@@ -234,9 +237,7 @@ public:
 
         hr->rem_set()->clean_strong_code_roots(hr);
 
-        hr->note_self_forwarding_removal_end(during_initial_mark,
-                                             during_conc_mark,
-                                             live_bytes);
+        hr->note_self_forwarding_removal_end(live_bytes);
       }
     }
     return false;

@@ -28,6 +28,7 @@
 #include "runtime/atomic.hpp"
 #include "runtime/os.hpp"
 #include "services/memTracker.hpp"
+#include "utilities/align.hpp"
 #include "utilities/globalDefinitions.hpp"
 
 // Explicit C-heap memory management
@@ -149,7 +150,7 @@ template <class E, MEMFLAGS F>
 size_t MmapArrayAllocator<E, F>::size_for(size_t length) {
   size_t size = length * sizeof(E);
   int alignment = os::vm_allocation_granularity();
-  return align_size_up(size, alignment);
+  return align_up(size, alignment);
 }
 
 template <class E, MEMFLAGS F>
