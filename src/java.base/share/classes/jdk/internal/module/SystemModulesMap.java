@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,46 +23,46 @@
  * questions.
  */
 
-package javax.smartcardio;
+package jdk.internal.module;
 
 /**
- * Exception for errors that occur during communication with the
- * Smart Card stack or the card itself.
+ * This class is generated/overridden at link time to return the names of the
+ * SystemModules classes generated at link time.
  *
- * @since   1.6
- * @author  Andreas Sterbenz
- * @author  JSR 268 Expert Group
+ * @see SystemModuleFinders
+ * @see jdk.tools.jlink.internal.plugins.SystemModulesPlugin
  */
-public class CardException extends Exception {
 
-    private static final long serialVersionUID = 7787607144922050628L;
+class SystemModulesMap {
 
     /**
-     * Constructs a new CardException with the specified detail message.
-     *
-     * @param message the detail message
+     * Returns the SystemModules object to reconstitute all modules or null
+     * if this is an exploded build.
      */
-    public CardException(String message) {
-        super(message);
+    static SystemModules allSystemModules() {
+        return null;
     }
 
     /**
-     * Constructs a new CardException with the specified cause and a detail message
-     * of {@code (cause==null ? null : cause.toString())}.
-     *
-     * @param cause the cause of this exception or null
+     * Returns the SystemModules object to reconstitute default modules or null
+     * if this is an exploded build.
      */
-    public CardException(Throwable cause) {
-        super(cause);
+    static SystemModules defaultSystemModules() {
+        return null;
     }
 
     /**
-     * Constructs a new CardException with the specified detail message and cause.
-     *
-     * @param message the detail message
-     * @param cause the cause of this exception or null
+     * Returns the array of initial module names identified at link time.
      */
-    public CardException(String message, Throwable cause) {
-        super(message, cause);
+    static String[] moduleNames() {
+        return new String[0];
+    }
+
+    /**
+     * Returns the array of of SystemModules class names. The elements
+     * correspond to the elements in the array returned by moduleNames().
+     */
+    static String[] classNames() {
+        return new String[0];
     }
 }
