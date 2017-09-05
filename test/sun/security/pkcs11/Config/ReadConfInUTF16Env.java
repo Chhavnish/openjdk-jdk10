@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -21,12 +21,20 @@
  * questions.
  */
 
-/*
- * @test
- * @bug 8151299 8164704 8187044
- * @modules jdk.incubator.httpclient java.management
- * @run testng jdk.incubator.httpclient/jdk.incubator.http.SelectorTest
- * @run testng jdk.incubator.httpclient/jdk.incubator.http.RawChannelTest
- * @run testng jdk.incubator.httpclient/jdk.incubator.http.ResponseHeadersTest
- * @run main/othervm --add-reads jdk.incubator.httpclient=java.management jdk.incubator.httpclient/jdk.incubator.http.ConnectionPoolTest
- */
+import java.security.Provider;
+import java.security.Security;
+
+public class ReadConfInUTF16Env {
+    public static void main(String argv[]) {
+        Provider p = Security.getProvider("SunPKCS11");
+        if (p == null) {
+            p = Security.getProvider("SunPKCS11-Solaris");
+            if (p == null) {
+                System.out.println("Skipping test - no PKCS11 provider available");
+                return;
+            }
+        }
+
+        System.out.println(p.getName());
+    }
+}
